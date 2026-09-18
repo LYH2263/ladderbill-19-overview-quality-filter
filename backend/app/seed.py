@@ -31,6 +31,9 @@ def init_db():
         conn.execute(
             "INSERT INTO accounts(name, meter_no, note) VALUES ('李家(种子偏高)', 'M-1002', '对照：高用量+尖峰')"
         )
+        conn.execute(
+            "INSERT INTO accounts(name, meter_no, note) VALUES ('王家', 'M-1003', '暂无测算记录')"
+        )
         conn.executemany(
             "INSERT INTO tiers(up_to, price, sort_order) VALUES (?,?,?)",
             [(180, 0.52, 1), (260, 0.62, 2), (None, 0.82, 3)],

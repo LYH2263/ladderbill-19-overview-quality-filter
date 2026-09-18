@@ -23,8 +23,17 @@ class BillingService:
     def __exit__(self, *args):
         self.close()
 
-    def list_accounts(self):
-        return accounts_repo.list_all(self._conn)
+    def list_accounts(self, quality: str | None = None):
+        items = accounts_repo.list_all(self._conn, quality)
+        latest = runs_repo.latest_by_account(self._conn, [a["id"] for a in items])
+        for a in items:
+            a["latest_run"] = _run_summary(latest.get(a["id"]))
+        return {
+            "quality": quality,
+            "total_count": accounts_repo.count_all(self._conn),
+            "filtered_count": len(items),
+            "items": items,
+        }
 
     def get_account(self, account_id: int):
         return accounts_repo.get(self._conn, account_id)
@@ -75,12 +84,34 @@ class BillingService:
     def dashboard_stats(self):
         accounts = accounts_repo.list_all(self._conn)
         readings = readings_repo.list_all(self._conn)
-        clean = [a for a in accounts if "种子" not in a.get("name", "")]
-        dirty = [a for a in accounts if "种子" in a.get("name", "")]
         return {
             "account_count": len(accounts),
             "reading_count": len(readings),
-            "clean_accounts": len(clean),
-            "dirty_accounts": len(dirty),
+            "clean_accounts": accounts_repo.count_all(self._conn, "clean"),
+            "dirty_accounts": accounts_repo.count_all(self._conn, "dirty"),
             "recent_runs": len(runs_repo.list_recent(self._conn, 5)),
         }
+
+
+def _run_summary(run: dict | None) -> dict:
+    """抽取各户最近一次运行的合计摘要；该户没有任何运行时返回空对象。"""
+    if run is None:
+        return {}
+    result = run.get("result") or {}
+    summary = {
+        "run_id": run["id"],
+        "kind": run["kind"],
+        "created_at": run["created_at"],
+        "kwh": result.get("kwh"),
+    }
+    if run["kind"] == "bill":
+        summary["total"] = result.get("total")
+    elif run["kind"] == "compare":
+        # 尖峰合计作为该户最近运行的合计口径，同时保留对照明细。
+        summary["plain_total"] = result.get("plain_total")
+        summary["peak_total"] = result.get("peak_total")
+        summary["total"] = result.get("peak_total")
+        summary["delta"] = result.get("delta")
+    else:
+        summary["result"] = result
+    return summary
