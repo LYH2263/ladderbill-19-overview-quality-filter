@@ -30,6 +30,21 @@ def list_recent(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
     return [dict(r) for r in conn.execute(q, (limit,)).fetchall()]
 
 
+def latest_by_account(conn: sqlite3.Connection) -> dict[int, dict]:
+    """每户最近一条 calc_run，按 account_id 索引。"""
+    q = """
+    SELECT r.id, r.kind, r.account_id, r.result_json, r.created_at
+    FROM calc_runs r
+    JOIN (
+        SELECT account_id, MAX(id) AS max_id
+        FROM calc_runs
+        WHERE account_id IS NOT NULL
+        GROUP BY account_id
+    ) latest ON latest.max_id = r.id
+    """
+    return {row["account_id"]: dict(row) for row in conn.execute(q).fetchall()}
+
+
 def get(conn: sqlite3.Connection, run_id: int) -> dict | None:
     row = conn.execute("SELECT * FROM calc_runs WHERE id=?", (run_id,)).fetchone()
     return dict(row) if row else None

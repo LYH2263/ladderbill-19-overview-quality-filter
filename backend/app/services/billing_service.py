@@ -8,6 +8,17 @@ from app.repositories import readings as readings_repo
 from app.repositories import runs as runs_repo
 from app.repositories import settings as settings_repo
 from app.repositories import tiers as tiers_repo
+from app.services import quality as quality_mod
+
+
+def _run_summary(run: dict) -> dict:
+    """最近运行的合计摘要：run 元信息 + 结果中带有的合计字段。"""
+    result = json.loads(run.get("result_json") or "{}")
+    summary = {"run_id": run["id"], "kind": run["kind"], "created_at": run["created_at"]}
+    for key in ("total", "plain_total", "peak_total", "delta"):
+        if key in result:
+            summary[key] = result[key]
+    return summary
 
 
 class BillingService:
@@ -23,8 +34,15 @@ class BillingService:
     def __exit__(self, *args):
         self.close()
 
-    def list_accounts(self):
-        return accounts_repo.list_all(self._conn)
+    def list_accounts(self, quality: str = "all") -> dict:
+        accounts = quality_mod.apply_quality(accounts_repo.list_all(self._conn), quality)
+        latest_runs = runs_repo.latest_by_account(self._conn)
+        items = []
+        for account in accounts:
+            run = latest_runs.get(account["id"])
+            # 无最近运行的户保留在名单内，摘要为空对象
+            items.append({**account, "run_summary": _run_summary(run) if run else {}})
+        return {"quality": quality, "total": len(items), "items": items}
 
     def get_account(self, account_id: int):
         return accounts_repo.get(self._conn, account_id)
@@ -75,12 +93,10 @@ class BillingService:
     def dashboard_stats(self):
         accounts = accounts_repo.list_all(self._conn)
         readings = readings_repo.list_all(self._conn)
-        clean = [a for a in accounts if "种子" not in a.get("name", "")]
-        dirty = [a for a in accounts if "种子" in a.get("name", "")]
         return {
             "account_count": len(accounts),
             "reading_count": len(readings),
-            "clean_accounts": len(clean),
-            "dirty_accounts": len(dirty),
+            "clean_accounts": len(quality_mod.apply_quality(accounts, "clean")),
+            "dirty_accounts": len(quality_mod.apply_quality(accounts, "dirty")),
             "recent_runs": len(runs_repo.list_recent(self._conn, 5)),
         }

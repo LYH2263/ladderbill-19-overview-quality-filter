@@ -1,14 +1,26 @@
 from fastapi import APIRouter, HTTPException
 
 from app.services.billing_service import BillingService
+from app.services.quality import QUALITY_FILTERS
 
 router = APIRouter(tags=["accounts"])
 
 
 @router.get("/accounts")
-def list_accounts():
+def list_accounts(quality: str = "all"):
+    if quality not in QUALITY_FILTERS:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "INVALID_QUALITY_FILTER",
+                "message": (
+                    f"unsupported quality filter {quality!r}; "
+                    f"expected one of: {', '.join(QUALITY_FILTERS)}"
+                ),
+            },
+        )
     with BillingService() as svc:
-        return {"items": svc.list_accounts()}
+        return svc.list_accounts(quality)
 
 
 @router.get("/accounts/{account_id}")
